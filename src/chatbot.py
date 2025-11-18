@@ -199,6 +199,11 @@ class TinyAIAssistant:
     Tiny AI 어시스턴트
 
     친절하고 논리적인 톤앤매너로 일상 문제를 해결합니다.
+
+    Claude 철학 적용:
+    - 컨텍스트 인식: 이전 대화 내용 기억
+    - 불확실성 표현: 신뢰도에 따른 솔직한 응답
+    - 안전성: 기본 필터링
     """
 
     def __init__(self, intents_file=None):
@@ -210,6 +215,11 @@ class TinyAIAssistant:
         self.classifier = IntentClassifier(self.intents) if self.intents else None
         self.response_generator = ResponseGenerator(self.intents) if self.intents else None
         self.conversation_history = []
+        self.conversation_state = {
+            'current_topic': None,
+            'last_intent': None,
+            'turn_count': 0
+        }
 
     def load_intents(self, filepath):
         """
@@ -241,9 +251,86 @@ class TinyAIAssistant:
         else:
             print("학습할 의도 데이터가 없습니다.")
 
+    def _get_conversation_context(self):
+        """
+        대화 컨텍스트 추출
+
+        Returns:
+            컨텍스트 딕셔너리
+        """
+        context = {
+            'has_history': len(self.conversation_history) > 0,
+            'turn_count': self.conversation_state['turn_count'],
+            'last_intent': self.conversation_state['last_intent'],
+            'current_topic': self.conversation_state['current_topic']
+        }
+
+        # 최근 3개 턴 요약
+        recent_turns = []
+        for msg in self.conversation_history[-6:]:  # 최근 3턴 (user + assistant)
+            if msg['role'] == 'user':
+                recent_turns.append(msg['content'])
+
+        context['recent_inputs'] = recent_turns
+        return context
+
+    def _is_follow_up(self, user_input):
+        """
+        후속 질문인지 판단
+
+        Args:
+            user_input: 사용자 입력
+
+        Returns:
+            후속 질문 여부
+        """
+        # 대명사나 지시어가 있으면 후속 질문일 가능성
+        follow_up_indicators = [
+            '그거', '그게', '그런', '그래서', '그럼', '그리고',
+            '그것', '그 방법', '더', '또', '그 외', '다른',
+            '좀 더', '계속', '아까', '방금', '그', '그렇게'
+        ]
+
+        for indicator in follow_up_indicators:
+            if indicator in user_input:
+                return True
+
+        return False
+
+    def _apply_safety_filter(self, user_input):
+        """
+        기본 안전 필터 적용
+
+        Args:
+            user_input: 사용자 입력
+
+        Returns:
+            (필터 통과 여부, 경고 메시지)
+        """
+        # 매우 기본적인 안전 필터 (확장 가능)
+        unsafe_patterns = [
+            '자살', '죽고싶', '살기싫',  # 위기 상황
+        ]
+
+        for pattern in unsafe_patterns:
+            if pattern in user_input:
+                warning = (
+                    "힘든 시간을 보내고 계신 것 같아 마음이 아픕니다. "
+                    "전문적인 도움이 필요하실 수 있어요.\n\n"
+                    "**도움 받을 수 있는 곳:**\n"
+                    "• 자살예방 상담전화: 1393\n"
+                    "• 정신건강 위기상담: 1577-0199\n"
+                    "• 희망의 전화: 129\n\n"
+                    "혼자 감당하지 마시고 전문가의 도움을 받아보세요. "
+                    "당신은 소중한 사람입니다."
+                )
+                return False, warning
+
+        return True, None
+
     def chat(self, user_input):
         """
-        사용자 입력에 응답
+        사용자 입력에 응답 (컨텍스트 인식 + 불확실성 표현)
 
         Args:
             user_input: 사용자 입력
@@ -251,32 +338,123 @@ class TinyAIAssistant:
         Returns:
             챗봇 응답
         """
-        # 대화 기록 저장
+        # 1. 안전 필터 적용
+        is_safe, safety_message = self._apply_safety_filter(user_input)
+        if not is_safe:
+            # 안전 경고 메시지 기록 및 반환
+            self.conversation_history.append({
+                'role': 'user',
+                'content': user_input
+            })
+            self.conversation_history.append({
+                'role': 'assistant',
+                'content': safety_message,
+                'intent': 'safety_warning',
+                'confidence': 1.0
+            })
+            return safety_message
+
+        # 2. 대화 기록 저장
         self.conversation_history.append({
             'role': 'user',
             'content': user_input
         })
 
-        # 의도 분류
+        # 3. 의도 분류
         intent, confidence = self.classifier.predict(user_input)
 
-        # 응답 생성
+        # 4. 컨텍스트 수집
+        conversation_context = self._get_conversation_context()
+        is_follow_up = self._is_follow_up(user_input)
+
+        # 5. 응답 생성
         if intent:
             context = {
                 'confidence': f"{confidence:.2%}",
-                'user_input': user_input
+                'user_input': user_input,
+                'is_follow_up': is_follow_up,
+                'last_intent': conversation_context['last_intent']
             }
             response = self.response_generator.generate(intent, context)
-        else:
-            response = self.response_generator.get_fallback_response()
 
-        # 응답 기록
+            # 6. 신뢰도 기반 불확실성 표현
+            response = self._add_confidence_expression(response, confidence, intent)
+
+        else:
+            # 낮은 신뢰도: 솔직하게 불확실성 표현
+            response = self._get_uncertain_response(confidence, conversation_context)
+
+        # 7. 대화 상태 업데이트
+        self.conversation_state['last_intent'] = intent
+        self.conversation_state['current_topic'] = intent
+        self.conversation_state['turn_count'] += 1
+
+        # 8. 응답 기록
         self.conversation_history.append({
             'role': 'assistant',
             'content': response,
             'intent': intent,
             'confidence': confidence
         })
+
+        return response
+
+    def _add_confidence_expression(self, response, confidence, intent):
+        """
+        신뢰도에 따라 불확실성 표현 추가
+
+        Args:
+            response: 기본 응답
+            confidence: 신뢰도 (0.0~1.0)
+            intent: 분류된 의도
+
+        Returns:
+            불확실성 표현이 추가된 응답
+        """
+        # 중간 신뢰도 (0.25~0.5): 약간의 불확실성 표현
+        if 0.25 <= confidence < 0.5:
+            uncertainty_prefixes = [
+                "제 이해가 맞다면, ",
+                "아마도 이런 의미이신 것 같은데요. ",
+                "정확하지 않을 수 있지만, ",
+            ]
+            prefix = random.choice(uncertainty_prefixes)
+            response = prefix + response
+
+        return response
+
+    def _get_uncertain_response(self, confidence, context):
+        """
+        불확실할 때의 응답 (개선된 폴백)
+
+        Args:
+            confidence: 신뢰도
+            context: 대화 컨텍스트
+
+        Returns:
+            불확실성을 솔직하게 표현한 응답
+        """
+        # 이전 대화가 있으면 더 친절한 응답
+        if context['has_history']:
+            responses = [
+                "이 부분은 제가 잘 이해하지 못했어요. 다른 방식으로 말씀해 주시겠어요?",
+                "음... 정확히 무엇을 원하시는지 확실하지 않네요. 좀 더 구체적으로 설명해 주실 수 있나요?",
+                "죄송해요, 이 질문은 제 능력 범위를 벗어나는 것 같아요. 다른 주제로 도와드릴까요?",
+            ]
+        else:
+            responses = [
+                "안녕하세요! 무엇을 도와드릴까요? 인사, 감사, 도움 요청, 농담 등 편하게 말씀해 주세요.",
+                "반갑습니다! 질문을 이해하지 못했어요. '도와줘', '고마워', '안녕' 같은 일상 대화로 시작해 볼까요?",
+            ]
+
+        response = random.choice(responses)
+
+        # 도움이 될 만한 제안 추가
+        response += "\n\n💡 **이런 것들을 도와드릴 수 있어요:**\n"
+        response += "• 인사 나누기\n"
+        response += "• 일상 대화\n"
+        response += "• 공부/계획/문제해결 조언\n"
+        response += "• 동기부여와 격려\n"
 
         return response
 
@@ -290,8 +468,13 @@ class TinyAIAssistant:
         return self.conversation_history
 
     def clear_history(self):
-        """대화 기록 초기화"""
+        """대화 기록 및 상태 초기화"""
         self.conversation_history = []
+        self.conversation_state = {
+            'current_topic': None,
+            'last_intent': None,
+            'turn_count': 0
+        }
 
     def save_model(self, filepath):
         """
