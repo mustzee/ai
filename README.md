@@ -9,7 +9,8 @@ Tiny AI는 최소한의 코드로 인공지능의 핵심 원리를 이해하고 
 3. [구현 방법](#구현-방법)
 4. [프로젝트 구조](#프로젝트-구조)
 5. [사용 예시](#사용-예시)
-6. [실행 방법](#실행-방법)
+6. [🆕 대화형 AI 챗봇](#-대화형-ai-챗봇)
+7. [실행 방법](#실행-방법)
 
 ## 🤖 Tiny AI란?
 
@@ -127,20 +128,26 @@ weights_input_hidden += input.T.dot(hidden_delta) * learning_rate
 
 ```
 tiny-ai/
-├── README.md                 # 프로젝트 설명서
+├── README.md                      # 프로젝트 설명서
+├── requirements.txt               # 필수 라이브러리
 ├── docs/
-│   ├── theory.md            # 이론 설명
-│   └── implementation.md    # 구현 가이드
+│   ├── theory.md                  # 이론 설명
+│   └── implementation.md          # 구현 가이드
 ├── src/
 │   ├── __init__.py
-│   ├── perceptron.py        # 단일 퍼셉트론 구현
-│   ├── mlp.py               # 다층 퍼셉트론 구현
-│   ├── activations.py       # 활성화 함수들
-│   └── utils.py             # 유틸리티 함수들
+│   ├── perceptron.py              # 단일 퍼셉트론 구현
+│   ├── mlp.py                     # 다층 퍼셉트론 구현
+│   ├── activations.py             # 활성화 함수들
+│   ├── utils.py                   # 유틸리티 함수들
+│   ├── text_processing.py         # 🆕 텍스트 처리 (토크나이저, TF-IDF)
+│   └── chatbot.py                 # 🆕 대화형 AI 챗봇
+├── data/
+│   └── intents.json               # 🆕 챗봇 의도 정의
 ├── examples/
-│   ├── xor_problem.py       # XOR 문제 해결
-│   ├── mnist_simple.py      # 간단한 숫자 인식
-│   └── iris_classification.py # 붓꽃 분류
+│   ├── xor_problem.py             # XOR 문제 해결
+│   ├── simple_perceptron.py       # 단순 퍼셉트론 예제
+│   ├── iris_classification.py     # 붓꽃 분류
+│   └── chatbot_demo.py            # 🆕 챗봇 데모
 └── tests/
     └── test_neural_network.py
 ```
@@ -186,6 +193,70 @@ model.train(X, y, epochs=1000)
 accuracy = model.evaluate(X, y)
 print(f"정확도: {accuracy:.2%}")
 ```
+
+## 💬 대화형 AI 챗봇
+
+**NEW!** Tiny AI에 이제 대화형 챗봇 기능이 추가되었습니다!
+
+### 특징
+
+- 🎯 **의도 분류**: 신경망을 사용한 사용자 의도 파악
+- 🗣️ **자연스러운 대화**: 친절하고 논리적인 톤앤매너
+- 🤝 **일상 문제 해결**: 인사, 질문, 조언, 격려 등
+- 📚 **학습 가능**: 새로운 의도와 응답 추가 가능
+
+### 지원하는 대화
+
+- ✅ 인사 (안녕, 반가워, 좋은 아침)
+- ✅ 감사 표현 (고마워, 감사합니다)
+- ✅ 작별 인사 (잘가, 바이)
+- ✅ 도움 요청 (도와줘, 알려줘)
+- ✅ 기분/상태 질문 (어때, 잘 지내)
+- ✅ 농담 (재미있는 얘기해줘)
+- ✅ 문제 해결 조언
+- ✅ 공부 도움
+- ✅ 격려/동기부여
+
+### 사용 예시
+
+```python
+from src.chatbot import TinyAIAssistant
+
+# 챗봇 초기화
+assistant = TinyAIAssistant(intents_file='data/intents.json')
+
+# 학습
+assistant.train(epochs=500)
+
+# 대화
+response = assistant.chat("안녕하세요!")
+print(response)  # "안녕하세요! 반갑습니다. 무엇을 도와드릴까요?"
+
+response = assistant.chat("공부 도와줘")
+print(response)  # "공부를 도와드릴게요! 효과적인 학습 방법은..."
+```
+
+### 대화 예시
+
+```
+👤 사용자: 안녕!
+🤖 AI: 안녕하세요! 오늘 하루는 어떠신가요? 도움이 필요하시면 말씀해 주세요.
+
+👤 사용자: 기분이 안 좋아
+🤖 AI: 힘든 시기를 겪고 계시는군요. 하지만 이 또한 지나갈 거예요.
+       한 걸음씩 천천히 가도 괜찮습니다. 당신은 충분히 잘하고 있어요!
+
+👤 사용자: 고마워
+🤖 AI: 천만에요! 도움이 되었다니 기쁩니다.
+```
+
+### CLI 챗봇 실행
+
+```bash
+python examples/chatbot_demo.py
+```
+
+대화형 인터페이스에서 AI와 자유롭게 대화할 수 있습니다!
 
 ## 🚀 실행 방법
 
